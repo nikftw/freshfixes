@@ -3,11 +3,12 @@
 ## Notes: Guild raid & QoL toolkit
 ## Author: Fresh Fixes
 ## Version: 0.7.0
-## SavedVariables: FreshFixesDB
+## SavedVariables: FreshFixesDB, FreshFixesErrors
 ## OptionalDeps: EllesmereUI
 ## IconTexture: Interface\Icons\INV_Misc_Note_06
 
 Core.lua
+Diag.lua
 Codec.lua
 Comms.lua
 Skin.lua
