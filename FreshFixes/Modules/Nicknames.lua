@@ -236,14 +236,25 @@ FF.Init("Nicknames", function()
         end
     end
 
-    -- raid / party frames and player nameplates (forbidden ones are off limits)
-    local function nameRaidFrame(frame)
-        if not db.frames or not frame or (frame.IsForbidden and frame:IsForbidden()) or not frame.name then
+    -- Raid / party frames and player nameplates (forbidden ones are off
+    -- limits). We only ever set the name text. Blizzard's own update is never
+    -- called from here: running it from add-on code would taint the frames.
+    -- fromGame: Blizzard just wrote the real name, so there is nothing to undo.
+    local nicked = setmetatable({}, { __mode = "k" }) -- frames showing a nickname
+    local function nameRaidFrame(frame, fromGame)
+        if not frame or (frame.IsForbidden and frame:IsForbidden()) or not frame.name or not frame.unit then
             return
         end
         local nick = M.For(frame.unit, "frames")
         if nick then
             frame.name:SetText(nick)
+            nicked[frame] = true
+        elseif nicked[frame] then
+            nicked[frame] = nil
+            if not fromGame then -- nickname removed: put the real name back
+                local full = frame.optionTable and frame.optionTable.updateNameUsesGetUnitName and not frame.hideRealmName
+                frame.name:SetText(GetUnitName(frame.unit, full))
+            end
         end
     end
 
@@ -255,54 +266,64 @@ FF.Init("Nicknames", function()
         for _, f in ipairs(unitFrames) do
             nameUnitFrame(f)
         end
-        -- let Blizzard rewrite the real names; the hook puts nicknames on top
-        local function redraw(frame)
-            if frame and frame.unit and not (frame.IsForbidden and frame:IsForbidden()) then
-                CompactUnitFrame_UpdateName(frame)
-            end
-        end
         for g = 1, 8 do
             for i = 1, 5 do
-                redraw(_G["CompactRaidGroup" .. g .. "Member" .. i])
+                nameRaidFrame(_G["CompactRaidGroup" .. g .. "Member" .. i])
             end
         end
         for i = 1, 40 do
-            redraw(_G["CompactPartyFrameMember" .. i] or _G["CompactRaidFrame" .. i])
+            nameRaidFrame(_G["CompactPartyFrameMember" .. i] or _G["CompactRaidFrame" .. i])
         end
     end
 
     ---------------------------------------------------------------------------
     -- Chat: the clickable [Name] shows the nickname; the link still points at
     -- the real character, so whispers and menus work as usual.
+    -- Done through the game's own chat filters (ChatFrameUtil), which run each
+    -- add-on callback in isolation and skip secret names. Nothing here can
+    -- taint the chat frames (replacing AddMessage did, and broke /ginvite).
     ---------------------------------------------------------------------------
-    local function chatText(text)
-        if not db.chat or not readable(text) or type(text) ~= "string" or not text:find("|Hplayer:", 1, true) then
-            return text
+    -- Swap the visible name in "|cffxxxxxx[Name]|r" (colors, icons and
+    -- brackets kept). nil when it can't be found.
+    local function swapName(shown, nick)
+        local visible = shown:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("|T.-|t", ""):gsub("|A.-|a", ""):gsub("[%[%]]", "")
+        visible = visible:match("^%s*(.-)%s*$")
+        local s, e = shown:find(visible, 1, true)
+        if visible == "" or not s then
+            return
         end
-        return (text:gsub("(|Hplayer:([^:|]+)[^|]*|h)(.-)(|h)", function(open, target, shown, close)
+        return shown:sub(1, s - 1) .. nick .. shown:sub(e + 1)
+    end
+
+    -- Message author: (event, decoratedName, text, senderName, ...)
+    local function senderFilter(_, decorated, _, sender)
+        local nick = db.chat and look(sender)
+        return nick and type(decorated) == "string" and swapName(decorated, nick) or nil
+    end
+
+    -- Player links inside system lines ("[Name] has come online.")
+    local function linkFilter(_, _, text, ...)
+        if not db.chat or not readable(text) or type(text) ~= "string" or not text:find("|Hplayer:", 1, true) then
+            return
+        end
+        local new = text:gsub("(|Hplayer:([^:|]+)[^|]*|h)(.-)(|h)", function(open, target, shown, close)
             local nick = look(target) -- full name in the link, or nothing
-            if not nick then
-                return
-            end
-            local visible = shown:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("[%[%]]", "")
-            local s, e = shown:find(visible, 1, true)
-            if visible == "" or not s then
-                return
-            end
-            return open .. shown:sub(1, s - 1) .. nick .. shown:sub(e + 1) .. close
-        end))
+            local swapped = nick and swapName(shown, nick)
+            return swapped and (open .. swapped .. close) or nil
+        end)
+        if new ~= text then
+            return false, new, ...
+        end
     end
 
     local function hookChat()
-        for _, name in ipairs(CHAT_FRAMES or {}) do
-            local cf = _G[name]
-            if cf and not cf.ffNick then
-                cf.ffNick = true
-                local add = cf.AddMessage
-                cf.AddMessage = function(self, text, ...)
-                    return add(self, chatText(text), ...)
-                end
-            end
+        local util = ChatFrameUtil
+        if util and util.AddSenderNameFilter then
+            util.AddSenderNameFilter(senderFilter)
+        end
+        local addFilter = util and util.AddMessageEventFilter or ChatFrame_AddMessageEventFilter
+        if addFilter then
+            addFilter("CHAT_MSG_SYSTEM", linkFilter)
         end
     end
 
@@ -485,13 +506,12 @@ FF.Init("Nicknames", function()
     FF.On("FF_READY", function()
         FF.RequestGuildRoster() -- ranks for incoming pushes
         if db.frames then
-            hooksecurefunc("CompactUnitFrame_UpdateName", nameRaidFrame)
+            hooksecurefunc("CompactUnitFrame_UpdateName", function(frame)
+                nameRaidFrame(frame, true)
+            end)
             hookUnitFrames()
         end
-        hookChat()
-        if FCF_OpenTemporaryWindow then
-            hooksecurefunc("FCF_OpenTemporaryWindow", hookChat) -- new whisper tabs
-        end
+        hookChat() -- covers every chat window, new whisper tabs included
         C_Timer.After(2, M.UpdateFrames)
         hookWeakAuras()
     end)
