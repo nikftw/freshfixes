@@ -11,11 +11,31 @@ function FF.NickOr(key, name)
 end
 
 function FF.ClassColor(class, text)
-    local c = class and RAID_CLASS_COLORS[class]
+    local c = FF.readable(class) and class and RAID_CLASS_COLORS[class]
     if not c then
         return text
     end
     return ("|cff%02x%02x%02x%s|r"):format(c.r * 255, c.g * 255, c.b * 255, text)
+end
+
+-- Copper amount as coin text. GetCoinTextureString is gone on some clients
+-- (moved to C_CurrencyInfo), so fall back to plain "1g 02s 03c".
+function FF.Money(copper)
+    copper = tonumber(copper) or 0
+    local fn = (C_CurrencyInfo and C_CurrencyInfo.GetCoinTextureString) or GetCoinTextureString
+    if type(fn) == "function" then
+        local ok, text = pcall(fn, copper)
+        if ok and type(text) == "string" then
+            return text
+        end
+    end
+    local g, s, c = math.floor(copper / 10000), math.floor(copper % 10000 / 100), copper % 100
+    if g > 0 then
+        return ("%dg %02ds %02dc"):format(g, s, c)
+    elseif s > 0 then
+        return ("%ds %02dc"):format(s, c)
+    end
+    return ("%dc"):format(c)
 end
 
 function FF.Clock(sec)
