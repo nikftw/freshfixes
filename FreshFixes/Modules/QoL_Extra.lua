@@ -169,14 +169,22 @@ FF.Init("QoL", function()
         if not unit or not readable(unit) then
             return
         end
-        if db.tipHideInCombat and InCombatLockdown() and not IsShiftKeyDown()
-            and not (UnitInParty(unit) or UnitInRaid(unit) or UnitIsUnit(unit, "player")) then
-            tip:Hide()
-            return
+        -- Unit APIs can return secret values here (e.g. mouseover units in
+        -- combat); a boolean test on one taints and errors, so check first.
+        if db.tipHideInCombat and InCombatLockdown() and not IsShiftKeyDown() then
+            local inParty, inRaid, isMe = UnitInParty(unit), UnitInRaid(unit), UnitIsUnit(unit, "player")
+            if readable(inParty) and readable(inRaid) and readable(isMe)
+                and not (inParty or inRaid or isMe) then
+                tip:Hide()
+                return
+            end
         end
-        if db.tipGuildRank and UnitIsPlayer(unit) then
+        local isPlayer = UnitIsPlayer(unit)
+        if db.tipGuildRank and readable(isPlayer) and isPlayer then
             local guild, rank = GetGuildInfo(unit)
-            if readable(guild) and guild and guild == GetGuildInfo("player") and rank then
+            local myGuild = GetGuildInfo("player")
+            if readable(guild) and readable(rank) and readable(myGuild)
+                and guild and rank and guild == myGuild then
                 tip:AddLine("Rank: |cffffffff" .. rank .. "|r", 0.4, 0.8, 1)
             end
         end
@@ -184,7 +192,8 @@ FF.Init("QoL", function()
             local target = UnitName(unit .. "target")
             if readable(target) and target then
                 local _, class = UnitClass(unit .. "target")
-                tip:AddLine("Target: " .. (UnitIsUnit(unit .. "target", "player") and "|cffff4040YOU|r"
+                local isYou = UnitIsUnit(unit .. "target", "player")
+                tip:AddLine("Target: " .. (readable(isYou) and isYou and "|cffff4040YOU|r"
                     or FF.ClassColor(class, target)), 0.4, 0.8, 1)
             end
         end

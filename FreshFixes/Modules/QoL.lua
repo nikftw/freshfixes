@@ -86,12 +86,12 @@ FF.Init("QoL", function()
         if useGuild then
             RepairAllItems(true)
             if db.repairSummary then
-                FF.print("Repaired (guild):", GetCoinTextureString(cost))
+                FF.print("Repaired (guild):", FF.Money(cost))
             end
         elseif GetMoney() >= cost then
             RepairAllItems()
             if db.repairSummary then
-                FF.print("Repaired:", GetCoinTextureString(cost))
+                FF.print("Repaired:", FF.Money(cost))
             end
         else
             FF.print("Not enough gold to repair")
