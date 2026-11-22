@@ -297,6 +297,19 @@ FF.Init("Map", function()
             FF.HideTip()
         end
 
+        -- AcquirePin calls this via CheckMouseButtonPassthrough. It's protected
+        -- in combat, and from our provider it counts as FreshFixes calling it
+        -- (ADDON_ACTION_BLOCKED when the map opens in combat). Skip it then; the
+        -- pin just keeps its previous passthrough until the next refresh.
+        local setPassThrough = MapCanvasPinMixin.SetPassThroughButtons
+        function FreshFixesMapPinMixin:SetPassThroughButtons(...)
+            if InCombatLockdown() then
+                return
+            end
+            local fn = setPassThrough or getmetatable(self).__index.SetPassThroughButtons
+            fn(self, ...)
+        end
+
         local function newProvider()
             local p = CreateFromMixins(MapCanvasDataProviderMixin)
             function p:RemoveAllData()
